@@ -1,0 +1,72 @@
+{
+  "name": "flogo-minio-activity",
+  "type": "flogo:activity",
+  "version": "0.3.0",
+  "title": "Codelity Flogo MinIO Activity",
+  "description": "Codelity Flogo MinIO Activity",
+  "homepage": "https://github.com/codelity-co/flogo-minio-activity",
+  "settings": [
+    {
+      "name": "endpoint",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "accessKey",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "secretKey", 
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "enableSsl",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "name": "bucketName",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "region",
+      "type": "string"
+    },
+    {
+      "name": "methodName",
+      "type": "string",
+      "allowed": [
+        "PutObject"
+      ]
+    },
+    {
+      "name": "methodOptions",
+      "type": "object"
+    }
+  ],
+  "input": [
+    {
+      "name": "objectName",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "data",
+      "type": "any"
+    }
+  ],
+  "output": [
+    {
+      "name": "status",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "result",
+      "type": "object"
+    }
+  ]
+}
