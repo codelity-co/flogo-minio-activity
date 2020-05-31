@@ -2,9 +2,20 @@ package minio
 
 import (
 	"github.com/project-flogo/core/data/coerce"
-	"github.com/project-flogo/core/app/resolve"
+	"github.com/project-flogo/core/data/mapper"
+	"github.com/project-flogo/core/data/property"
+	"github.com/project-flogo/core/data/resolve"
+
 )
 
+var resolver = resolve.NewCompositeResolver(map[string]resolve.Resolver{
+	".":        &resolve.ScopeResolver{},
+	"env":      &resolve.EnvResolver{},
+	"property": &property.Resolver{},
+	"loop":     &resolve.LoopResolver{},
+})
+
+// Settings struct
 type Settings struct {
 	Endpoint string `md:"endpoint,required"`
 	AccessKey string `md:"accessKey,required"`
@@ -16,6 +27,7 @@ type Settings struct {
 	MethodOptions map[string]interface{} `md:"methodOptions"`
 }
 
+// FromMap method of Settings
 func (s *Settings) FromMap(values map[string]interface{}) error {
 
 	var (
@@ -57,20 +69,35 @@ func (s *Settings) FromMap(values map[string]interface{}) error {
 		return err
 	}
 
+	mapperFactory := mapper.NewFactory(resolver)
 	if values["methodOptions"] != nil {
-		s.MethodOptions = make(map[string]interface{})
-		for k, v := range values["methodOptions"].(map[string]interface{}) {
-			s.MethodOptions[k], err = s.MapValue(v)
-			if err != nil {
-				return err
-			}
+
+		var methodOptions map[string]interface{}
+		methodOptions, err = coerce.ToObject(values["methodName"])
+		if err != nil {
+			return err
 		}
+
+		var methodOptionsMapper mapper.Mapper
+		methodOptionsMapper, err = mapperFactory.NewMapper(methodOptions)
+		if err != nil {
+			return err
+		}
+
+		var methodOptionsValue map[string]interface{}
+		methodOptionsValue, err = methodOptionsMapper.Apply(nil)
+		if err != nil {
+			return err
+		}
+
+		s.MethodOptions = methodOptionsValue
 	}
 
 	return nil
 
 }
 
+// ToMap method of Settings
 func (s *Settings) ToMap() map[string]interface{} {
 
 	return map[string]interface{}{
@@ -86,51 +113,13 @@ func (s *Settings) ToMap() map[string]interface{} {
 
 }
 
-func (s *Settings) MapValue(value interface{}) (interface{}, error) {
-	var (
-		err      error
-		anyValue interface{}
-	)
-
-	switch val := value.(type) {
-	case string:
-		if len(val) > 0 && val[0] == '=' {
-			anyValue, err = resolve.Resolve(val[1:], nil)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			anyValue, err = coerce.ToAny(val)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-	case map[string]interface{}:
-		dataMap := make(map[string]interface{})
-		for k, v := range val {
-			dataMap[k], err = s.MapValue(v)
-			if err != nil {
-				return nil, err
-			}
-		}
-		anyValue = dataMap
-		
-	default:
-		anyValue, err = coerce.ToAny(val)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return anyValue, nil
-}
-
+// Input struct
 type Input struct {
 	ObjectName string `md:"objectName,required"`
 	Data interface{} `md:"data,required"`
 }
 
+// FromMap method of Input
 func (r *Input) FromMap(values map[string]interface{}) error {
 	var err error
 
@@ -147,6 +136,7 @@ func (r *Input) FromMap(values map[string]interface{}) error {
 	return nil
 }
 
+// ToMap method of Input
 func (r *Input) ToMap() map[string]interface{} {
 	return map[string]interface{}{
 		"objectName": r.ObjectName,
@@ -154,11 +144,13 @@ func (r *Input) ToMap() map[string]interface{} {
 	}
 }
 
+// Output struct
 type Output struct {
 	Status string `md:"status,required"`
 	Result map[string]interface{} `md:"result"`
 }
  
+// FromMap method of Output
 func (o *Output) FromMap(values map[string]interface{}) error {
 	var err error
 
@@ -175,6 +167,7 @@ func (o *Output) FromMap(values map[string]interface{}) error {
 	return nil
 }
 
+// ToMap method of Output
 func (o *Output) ToMap() map[string]interface{} {
 	return map[string]interface{}{
 		"status": o.Status,
