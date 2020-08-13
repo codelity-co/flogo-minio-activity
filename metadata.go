@@ -2,18 +2,8 @@ package minio
 
 import (
 	"github.com/project-flogo/core/data/coerce"
-	"github.com/project-flogo/core/data/mapper"
-	"github.com/project-flogo/core/data/property"
-	"github.com/project-flogo/core/data/resolve"
 
 )
-
-var resolver = resolve.NewCompositeResolver(map[string]resolve.Resolver{
-	".":        &resolve.ScopeResolver{},
-	"env":      &resolve.EnvResolver{},
-	"property": &property.Resolver{},
-	"loop":     &resolve.LoopResolver{},
-})
 
 // Settings struct
 type Settings struct {
@@ -69,28 +59,9 @@ func (s *Settings) FromMap(values map[string]interface{}) error {
 		return err
 	}
 
-	mapperFactory := mapper.NewFactory(resolver)
-	if values["methodOptions"] != nil {
-
-		var methodOptions map[string]interface{}
-		methodOptions, err = coerce.ToObject(values["methodName"])
-		if err != nil {
-			return err
-		}
-
-		var methodOptionsMapper mapper.Mapper
-		methodOptionsMapper, err = mapperFactory.NewMapper(methodOptions)
-		if err != nil {
-			return err
-		}
-
-		var methodOptionsValue map[string]interface{}
-		methodOptionsValue, err = methodOptionsMapper.Apply(nil)
-		if err != nil {
-			return err
-		}
-
-		s.MethodOptions = methodOptionsValue
+	s.MethodOptions, err = coerce.ToObject(values["methodOptions"])
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -116,6 +87,7 @@ func (s *Settings) ToMap() map[string]interface{} {
 // Input struct
 type Input struct {
 	ObjectName string `md:"objectName,required"`
+	Format string `md:"format,required"`
 	Data interface{} `md:"data,required"`
 }
 
@@ -124,6 +96,11 @@ func (r *Input) FromMap(values map[string]interface{}) error {
 	var err error
 
 	r.ObjectName, err = coerce.ToString(values["objectName"])
+	if err != nil {
+		return err
+	}
+
+	r.Format, err = coerce.ToString(values["format"])
 	if err != nil {
 		return err
 	}
@@ -140,6 +117,7 @@ func (r *Input) FromMap(values map[string]interface{}) error {
 func (r *Input) ToMap() map[string]interface{} {
 	return map[string]interface{}{
 		"objectName": r.ObjectName,
+		"format": r.Format,
 		"data": r.Data,
 	}
 }

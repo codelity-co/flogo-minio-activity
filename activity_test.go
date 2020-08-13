@@ -49,12 +49,13 @@ func (suite *MinioActivityTestSuite) TestMinioActivity_Settings() {
 	t := suite.T()
 
 	settings := &Settings{
-		Endpoint: "localhost:9000",
-		AccessKey: "minioadmin",
-		SecretKey: "minioadmin", 
-		EnableSsl: false,
-		BucketName: "flogo",
-		MethodName: "PutObject",
+		Endpoint:      "localhost:9000",
+		AccessKey:     "minioadmin",
+		SecretKey:     "minioadmin",
+		EnableSsl:     false,
+		BucketName:    "flogo",
+		MethodName:    "PutObject",
+		MethodOptions: nil,
 	}
 
 	iCtx := test.NewActivityInitContext(settings, nil)
@@ -64,22 +65,61 @@ func (suite *MinioActivityTestSuite) TestMinioActivity_Settings() {
 
 func (suite *MinioActivityTestSuite) TestMinioActivity_PutObject() {
 	t := suite.T()
-	
+
 	settings := &Settings{
-		Endpoint: "localhost:9000",
-		AccessKey: "minioadmin",
-		SecretKey: "minioadmin", 
-		EnableSsl: false,
+		Endpoint:   "localhost:9000",
+		AccessKey:  "minioadmin",
+		SecretKey:  "minioadmin",
+		EnableSsl:  false,
 		BucketName: "flogo",
-		MethodName: "PutObject",
+		MethodName: "BucketExists",
 	}
 	iCtx := test.NewActivityInitContext(settings, nil)
 	act, err := New(iCtx)
 	assert.Nil(t, err)
 
 	tc := test.NewActivityContext(act.Metadata())
-	tc.SetInput("objectName", "inbox/testing.json")
-	tc.SetInput("data", "{\"abc\": \"123\"}")
-	_, err = act.Eval(tc) 
+	done, err := act.Eval(tc)
 	assert.Nil(t, err)
+	assert.Truef(t, done, "Not Done")
+	status := tc.GetOutput("status").(string)
+	assert.Equal(t, "SUCCESS", status)
+
+	result := tc.GetOutput("result").(map[string]interface{})
+	if !result["exist"].(bool) {
+
+		settings.MethodName = "MakeBucket"
+		iCtx = test.NewActivityInitContext(settings, nil)
+		act, err = New(iCtx)
+		assert.Nil(t, err)
+
+		tc = test.NewActivityContext(act.Metadata())
+		done, err = act.Eval(tc)
+
+		status := tc.GetOutput("status").(string)
+		result := tc.GetOutput("result").(map[string]interface{})
+		assert.Equal(t, "SUCCESS", status)
+		assert.Truef(t, result["created"].(bool), "Bucket not created")
+	}
+
+	settings.MethodName = "PutObject"
+	iCtx = test.NewActivityInitContext(settings, nil)
+	act, err = New(iCtx)
+	assert.Nil(t, err)
+
+	tc = test.NewActivityContext(act.Metadata())
+	tc.SetInput("objectName", "inbox/testing.json")
+	tc.SetInput("format", "JSON")
+	tc.SetInput("data", "{\"abc\": \"123\"}")
+	done, err = act.Eval(tc)
+	assert.Nil(t, err)
+	assert.Truef(t, done, "Not Done")
+
+	tc = test.NewActivityContext(act.Metadata())
+	tc.SetInput("objectName", "inbox/testing.csv")
+	tc.SetInput("format", "CSV")
+	tc.SetInput("data", "{\"abc\": \"123\", \"bcd\": {\"cde\": \"123\", \"efg\": false}}")
+	done, err = act.Eval(tc)
+	assert.Nil(t, err)
+	assert.Truef(t, done, "Not Done")
 }

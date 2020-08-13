@@ -33,6 +33,7 @@ flogo install github.com/codelity-co/flogo-minio-activity
   | Name                | Type   | Description
   | :---                | :---   | :---
   | objectName          | string | Minio object name - ***REQUIRED***
+  | foramt              | string | json or csv
   | data                | any    | data - ***REQUIRED***
 
 ## Output

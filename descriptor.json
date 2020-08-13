@@ -39,8 +39,11 @@
       "name": "methodName",
       "type": "string",
       "allowed": [
+        "GetObject",
         "PutObject"
-      ]
+      ],
+      "default": "GetObject",
+      "required": true
     },
     {
       "name": "methodOptions",
@@ -51,6 +54,13 @@
     {
       "name": "objectName",
       "type": "string",
+      "required": true
+    },
+    {
+      "name": "format",
+      "type": "string",
+      "allowed": ["JSON", "CSV"],
+      "default": "JSON",
       "required": true
     },
     {

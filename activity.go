@@ -3,23 +3,35 @@ package minio
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/project-flogo/core/activity"
+	"github.com/project-flogo/core/data"
+	"github.com/project-flogo/core/data/mapper"
+	"github.com/project-flogo/core/data/property"
+	"github.com/project-flogo/core/data/resolve"
 
+	"github.com/jeremywohl/flatten"
 	"github.com/minio/minio-go/v6"
+	"github.com/thoas/go-funk"
 )
 
-func init() {
-	_ = activity.Register(&Activity{}, New) //activity.Register(&Activity{}, New) to create instances using factory method 'New'
-}
-
 var activityMd = activity.ToMetadata(&Settings{}, &Input{}, &Output{})
+var resolver = resolve.NewCompositeResolver(map[string]resolve.Resolver{
+	".":        &resolve.ScopeResolver{},
+	"env":      &resolve.EnvResolver{},
+	"property": &property.Resolver{},
+	"loop":     &resolve.LoopResolver{},
+})
+
+func init() {
+	_ = activity.Register(&Activity{}, New)
+}
 
 //New function is used as activity factory
 func New(ctx activity.InitContext) (activity.Activity, error) {
-
-	logger := ctx.Logger()
 
 	var (
 		minioClient *minio.Client
@@ -31,22 +43,32 @@ func New(ctx activity.InitContext) (activity.Activity, error) {
 		return nil, err
 	}
 
-	logger.Debugf("From Map Setting: %v", s)
+	ctx.Logger().Debugf("Setting: %v", s)
+
+	// Resolving settings
+	if s.MethodOptions != nil {
+		ctx.Logger().Debugf("methodOpitons settings being resolved: %v", s.MethodOptions)
+		methodOptions, err := resolveObject(s.MethodOptions)
+		if err != nil {
+			return nil, err
+		}
+		s.MethodOptions = methodOptions
+		ctx.Logger().Debugf("methodOpitons settings resolved: %v", s.MethodOptions)
+	}
 
 	minioClient, err = minio.New(s.Endpoint, s.AccessKey, s.SecretKey, s.EnableSsl)
 	if err != nil {
-		logger.Errorf("MinIO connection error: %v", err)
+		ctx.Logger().Errorf("MinIO connection error: %v", err)
 		return nil, err
 	}
-	logger.Debug("Got MinIO connection")
-
+	ctx.Logger().Debug("Got MinIO connection")
 
 	act := &Activity{
 		activitySettings: s,
 		minioClient:      minioClient,
 	}
 
-	logger.Debug("Finished New method of activity")
+	ctx.Logger().Debug("Finished New method of activity")
 	return act, nil
 }
 
@@ -79,31 +101,19 @@ func (a *Activity) Eval(ctx activity.Context) (bool, error) {
 	logger.Debug("Got Input object successfully")
 	logger.Debugf("Input: %v", input)
 
-	var dataBytes []byte
-	if input.Data != nil {
-		dataBytes, err = json.Marshal(input.Data)
-		if err != nil {
-			logger.Errorf("Error marshalling input data: %v", err)
-			_ = a.OutputToContext(ctx, nil, err)
-			return true, err
-		}
-	}
-
 	logger.Debugf("a.activitySettings: %v", a.activitySettings)
 	switch a.activitySettings.MethodName {
+
+	case "BucketExists":
+		return a.bucketExists(ctx, input)
+	case "GetObject":
+		return a.getObject(ctx, input)
+	case "MakeBucket":
+		return a.makeBucket(ctx, input)
 	case "PutObject":
-		logger.Debug("Call MinIO PutObject method")
-		numberOfBytes, err := a.minioClient.PutObject(a.activitySettings.BucketName, input.ObjectName, bytes.NewReader(dataBytes), int64(len(dataBytes)), minio.PutObjectOptions{})
-		if err != nil {
-			logger.Errorf("Error in MinIO PutObject method: %v", err)
-			_ = a.OutputToContext(ctx, nil, err)
-			return true, err
-		}
-		err = a.OutputToContext(ctx, map[string]interface{}{"bytes": numberOfBytes}, nil)
-		if err != nil {
-			logger.Errorf("Error setting output object in context: %v", err)
-			return true, err
-		}
+		return a.putObject(ctx, input)
+	case "RemoveObject":
+		return a.putObject(ctx, input)
 	}
 
 	return true, nil
@@ -126,4 +136,194 @@ func (a *Activity) OutputToContext(ctx activity.Context, result map[string]inter
 	}
 	logger.Debug("Setting output object in context...")
 	return ctx.SetOutputObject(output)
+}
+
+func (a *Activity) bucketExists(ctx activity.Context, input *Input) (bool, error) {
+	var err error
+	logger := ctx.Logger()
+
+	logger.Debug("Call MinIO BucketExists method")
+	isBucketExisting, err := a.minioClient.BucketExists(a.activitySettings.BucketName)
+	if err != nil {
+		logger.Errorf("Error in MinIO BucketExists method: %v", err)
+		_ = a.OutputToContext(ctx, nil, err)
+		return true, err
+	}
+
+	err = a.OutputToContext(ctx, map[string]interface{}{"exist": isBucketExisting}, nil)
+	if err != nil {
+		logger.Errorf("Error setting output object in context: %v", err)
+		return true, err
+	}
+
+	return true, nil
+}
+
+func (a *Activity) getObject(ctx activity.Context, input *Input) (bool, error) {
+	var err error
+	logger := ctx.Logger()
+
+	logger.Debug("Call MinIO GetObject method")
+	minioObject, err := a.minioClient.GetObject(a.activitySettings.BucketName, input.ObjectName, minio.GetObjectOptions{})
+	if err != nil {
+		logger.Errorf("Error in MinIO GetObject method: %v", err)
+		_ = a.OutputToContext(ctx, nil, err)
+		return true, err
+	}
+	objectStat, err := minioObject.Stat()
+	if err != nil {
+		logger.Errorf("Error in MinIO GetObject method: %v", err)
+		_ = a.OutputToContext(ctx, nil, err)
+		return true, err
+	}
+	objectBytes := make([]byte, objectStat.Size)
+	numberOfBytes, err := minioObject.Read(objectBytes)
+	if err != nil {
+		logger.Errorf("Error in MinIO GetObject method: %v", err)
+		_ = a.OutputToContext(ctx, nil, err)
+		return true, err
+	}
+	if int64(numberOfBytes) != objectStat.Size {
+		err = errors.New("object size does not match")
+		logger.Errorf("Error in MinIO GetObject method: %v", err)
+		_ = a.OutputToContext(ctx, nil, err)
+		return true, err
+	}
+
+	err = a.OutputToContext(ctx, map[string]interface{}{"data": string(objectBytes)}, nil)
+	if err != nil {
+		logger.Errorf("Error setting output object in context: %v", err)
+		return true, err
+	}
+
+	return true, nil
+}
+
+func (a *Activity) makeBucket(ctx activity.Context, input *Input) (bool, error) {
+	var err error
+	logger := ctx.Logger()
+
+	logger.Debug("Call MinIO BucketExists method")
+	err = a.minioClient.MakeBucket(a.activitySettings.BucketName, a.activitySettings.Region)
+	if err != nil {
+		logger.Errorf("Error in MinIO MakeBucket method: %v", err)
+		_ = a.OutputToContext(ctx, nil, err)
+		return true, err
+	}
+
+	err = a.OutputToContext(ctx, map[string]interface{}{"created": true}, nil)
+	if err != nil {
+		logger.Errorf("Error setting output object in context: %v", err)
+		return true, err
+	}
+
+	return true, nil
+}
+
+func (a *Activity) putObject(ctx activity.Context, input *Input) (bool, error) {
+
+	var err error
+	var dataBytes []byte
+	logger := ctx.Logger()
+
+	if input.Data == nil {
+		err = errors.New("Data is nil")
+		logger.Errorf("Error in MinIO PutObject method: %v", err)
+		_ = a.OutputToContext(ctx, nil, err)
+		return true, err
+	}
+
+	switch input.Format {
+	case "JSON":
+		dataBytes, err = json.Marshal(input.Data)
+		if err != nil {
+			logger.Errorf("Error marshalling input data into JSON: %v", err)
+			_ = a.OutputToContext(ctx, nil, err)
+			return true, err
+		}
+
+	case "CSV":
+		var dataMap map[string]interface{} = make(map[string]interface{})
+		json.Unmarshal([]byte(input.Data.(string)), &dataMap)
+		flattenedMap, err := flatten.Flatten(dataMap, "", flatten.DotStyle)
+		if err != nil {
+			logger.Errorf("Error flattening input data: %v", err)
+			_ = a.OutputToContext(ctx, nil, err)
+			return true, err
+		}
+		fmt.Println("flattenedMap: ", flattenedMap)
+
+		var csvHeaders []string = []string{}
+		for _, value := range funk.Keys(flattenedMap).([]string) {
+			csvHeaders = append(csvHeaders, fmt.Sprintf("%q", value))
+		}
+		var csvValues []string = []string{}
+		for _, value := range funk.Values(flattenedMap).([]interface{}) {
+			switch v := value.(type) {
+			case string:
+				csvValues = append(csvValues, fmt.Sprintf("%q", v))
+			case []byte:
+				csvValues = append(csvValues, fmt.Sprintf("%q", string(v)))
+			case bool:
+				csvValues = append(csvValues, fmt.Sprintf("%t", v))
+			default:
+				csvValues = append(csvValues, fmt.Sprintf("%v", v))
+			}
+		}
+		dataBytes = []byte(strings.Join([]string{strings.Join(csvHeaders, ","), strings.Join(csvValues, ",")}, "\n"))
+	}
+
+	logger.Debug("Call MinIO PutObject method")
+	numberOfBytes, err := a.minioClient.PutObject(a.activitySettings.BucketName, input.ObjectName, bytes.NewReader(dataBytes), int64(len(dataBytes)), minio.PutObjectOptions{})
+	if err != nil {
+		logger.Errorf("Error in MinIO PutObject method: %v", err)
+		_ = a.OutputToContext(ctx, nil, err)
+		return true, err
+	}
+
+	err = a.OutputToContext(ctx, map[string]interface{}{"bytes": numberOfBytes}, nil)
+	if err != nil {
+		logger.Errorf("Error setting output object in context: %v", err)
+		return true, err
+	}
+
+	return true, nil
+}
+
+func (a *Activity) removeObject(ctx activity.Context, input *Input) (bool, error) {
+	var err error
+	logger := ctx.Logger()
+
+	logger.Debug("Call MinIO GetObject method")
+	err = a.minioClient.RemoveObject(a.activitySettings.BucketName, input.ObjectName)
+	if err != nil {
+		logger.Errorf("Error in MinIO RemoveObject method: %v", err)
+		_ = a.OutputToContext(ctx, nil, err)
+		return true, err
+	}
+
+	err = a.OutputToContext(ctx, map[string]interface{}{"removed": true}, nil)
+	if err != nil {
+		logger.Errorf("Error setting output object in context: %v", err)
+		return true, err
+	}
+
+	return true, nil
+}
+
+func resolveObject(object map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+
+	mapperFactory := mapper.NewFactory(resolver)
+	valuesMapper, err := mapperFactory.NewMapper(object)
+	if err != nil {
+		return nil, err
+	}
+
+	objectValues, err := valuesMapper.Apply(data.NewSimpleScope(map[string]interface{}{}, nil))
+	if err != nil {
+		return nil, err
+	}
+
+	return objectValues, nil
 }
