@@ -244,7 +244,8 @@ func (a *Activity) putObject(ctx activity.Context, input *Input) (bool, error) {
 
 	case "CSV":
 		var dataMap map[string]interface{} = make(map[string]interface{})
-		json.Unmarshal([]byte(input.Data.(string)), &dataMap)
+		// json.Unmarshal([]byte(input.Data.(string)), &dataMap)
+		json.Unmarshal([]byte(fmt.Sprintf("%v", input.Data)), &dataMap)
 		flattenedMap, err := flatten.Flatten(dataMap, "", flatten.DotStyle)
 		if err != nil {
 			logger.Errorf("Error flattening input data: %v", err)
