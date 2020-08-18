@@ -243,16 +243,16 @@ func (a *Activity) putObject(ctx activity.Context, input *Input) (bool, error) {
 		}
 
 	case "CSV":
-		var dataMap map[string]interface{} = make(map[string]interface{})
-		// json.Unmarshal([]byte(input.Data.(string)), &dataMap)
-		json.Unmarshal([]byte(fmt.Sprintf("%v", input.Data)), &dataMap)
-		flattenedMap, err := flatten.Flatten(dataMap, "", flatten.DotStyle)
+		// var dataMap map[string]interface{} = make(map[string]interface{})
+		// // json.Unmarshal([]byte(input.Data.(string)), &dataMap)
+		// json.Unmarshal([]byte(fmt.Sprintf("%v", input.Data)), &dataMap)
+		flattenedMap, err := flatten.Flatten(input.Data.(map[string]interface{}), "", flatten.DotStyle)
 		if err != nil {
 			logger.Errorf("Error flattening input data: %v", err)
 			_ = a.OutputToContext(ctx, nil, err)
 			return true, err
 		}
-		fmt.Println("flattenedMap: ", flattenedMap)
+		logger.Debugf("flattenedMap: %v", flattenedMap)
 
 		var csvHeaders []string = []string{}
 		for _, value := range funk.Keys(flattenedMap).([]string) {
@@ -271,7 +271,10 @@ func (a *Activity) putObject(ctx activity.Context, input *Input) (bool, error) {
 				csvValues = append(csvValues, fmt.Sprintf("%v", v))
 			}
 		}
-		dataBytes = []byte(strings.Join([]string{strings.Join(csvHeaders, ","), strings.Join(csvValues, ",")}, "\n"))
+		dataString := strings.Join([]string{strings.Join(csvHeaders, ","), strings.Join(csvValues, ",")}, "\n")
+		logger.Debugf("dataString: %v", dataString)
+		dataBytes = []byte(dataString)
+
 	}
 
 	logger.Debug("Call MinIO PutObject method")
