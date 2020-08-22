@@ -11,6 +11,7 @@ type Settings struct {
 	AccessKey string `md:"accessKey,required"`
 	SecretKey string `md:"secretKey,required"`
 	EnableSsl bool `md:"enableSsl"`
+	SslConfig map[string]interface{} `md:"sslConfig"`
 	BucketName string `md:"bucketName,required"`
 	Region string `md:"region"`
 	MethodName string `md:"methodName,required"` 
@@ -40,6 +41,11 @@ func (s *Settings) FromMap(values map[string]interface{}) error {
 	}
 
 	s.EnableSsl, err = coerce.ToBool(values["enableSsl"])
+	if err != nil {
+		return err
+	}
+
+	s.SslConfig, err = coerce.ToObject(values["sslConfig"])
 	if err != nil {
 		return err
 	}
@@ -76,6 +82,7 @@ func (s *Settings) ToMap() map[string]interface{} {
 		"accessKey":    s.AccessKey,
 		"secretKey": s.SecretKey,
 		"enableSsl": s.EnableSsl,
+		"sslConfig": s.SslConfig,
 		"bucketName": s.BucketName,
 		"region": s.Region,
 		"methodName": s.MethodName,

@@ -27,6 +27,44 @@
       "default": false
     },
     {
+      "name": "sslConfig",
+      "type": "object",
+      "properties": [
+        {
+          "name": "caFile",
+          "type": "string"
+        },
+        {
+          "name": "certFile",
+          "type": "string"
+        },
+        {
+          "name": "keyFile",
+          "type": "string"
+        },
+        {
+          "name": "skipVerify",
+          "type": "boolean",
+          "value": false
+        },
+        {
+          "name": "maxIdleConns",
+          "type": "int",
+          "value": 10
+        },
+        {
+          "name": "idleConnTimeout",
+          "type": "int",
+          "value": 30
+        },
+        {
+          "name": "disableCompression",
+          "type": "boolean",
+          "value": true
+        }
+      ]
+    },
+    {
       "name": "bucketName",
       "type": "string",
       "required": true
