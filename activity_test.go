@@ -94,10 +94,13 @@ func (suite *MinioActivityTestSuite) TestMinioActivity_PutObject() {
 		assert.Nil(t, err)
 
 		tc = test.NewActivityContext(act.Metadata())
+		//nolint:ineffassign
 		done, err = act.Eval(tc)
 
 		status := tc.GetOutput("status").(string)
 		result := tc.GetOutput("result").(map[string]interface{})
+		assert.Nil(t, err)
+		assert.Equal(t, true, done)
 		assert.Equal(t, "SUCCESS", status)
 		assert.Truef(t, result["created"].(bool), "Bucket not created")
 	}
@@ -118,7 +121,7 @@ func (suite *MinioActivityTestSuite) TestMinioActivity_PutObject() {
 	tc = test.NewActivityContext(act.Metadata())
 	tc.SetInput("objectName", "inbox/testing.csv")
 	tc.SetInput("format", "CSV")
-	tc.SetInput("data", "{\"abc\": \"123\", \"bcd\": {\"cde\": \"123\", \"efg\": false}}")
+	tc.SetInput("data", map[string]interface{}{"abc": "123", "bcd": map[string]interface{}{"cde": "123", "efg": false}})
 	done, err = act.Eval(tc)
 	assert.Nil(t, err)
 	assert.Truef(t, done, "Not Done")

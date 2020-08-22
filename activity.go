@@ -2,10 +2,15 @@ package minio
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/project-flogo/core/activity"
 	"github.com/project-flogo/core/data"
@@ -56,12 +61,50 @@ func New(ctx activity.InitContext) (activity.Activity, error) {
 		ctx.Logger().Debugf("methodOpitons settings resolved: %v", s.MethodOptions)
 	}
 
+	// Resolving settings
+	if s.SslConfig != nil {
+		ctx.Logger().Debugf("sslConfig settings being resolved: %v", s.SslConfig)
+		sslConfig, err := resolveObject(s.SslConfig)
+		if err != nil {
+			return nil, err
+		}
+		s.SslConfig = sslConfig
+		ctx.Logger().Debugf("methodOpitons settings resolved: %v", s.SslConfig)
+	}
+	
 	minioClient, err = minio.New(s.Endpoint, s.AccessKey, s.SecretKey, s.EnableSsl)
 	if err != nil {
 		ctx.Logger().Errorf("MinIO connection error: %v", err)
 		return nil, err
 	}
 	ctx.Logger().Debug("Got MinIO connection")
+	
+	if s.EnableSsl && len(s.SslConfig["caFile"].(string)) > 0 {
+
+		cert, err := tls.LoadX509KeyPair(s.SslConfig["certFile"].(string), s.SslConfig["keyFile"].(string))
+		if err != nil {
+			return nil, err
+		}
+
+		caCert, err := ioutil.ReadFile(s.SslConfig["caFile"].(string))
+		if err != nil {
+			return nil, err
+		}
+
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+
+		minioClient.SetCustomTransport(&http.Transport{
+			MaxIdleConns: int(s.SslConfig["maxIdleConns"].(int64)),
+			IdleConnTimeout: ( time.Second * time.Duration(s.SslConfig["idleConnTimeout"].(int64))),
+			DisableCompression: s.SslConfig["disableCompression"].(bool),
+			TLSClientConfig: &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				RootCAs: caCertPool,
+			},
+		})
+	}
+	
 
 	act := &Activity{
 		activitySettings: s,
@@ -113,7 +156,7 @@ func (a *Activity) Eval(ctx activity.Context) (bool, error) {
 	case "PutObject":
 		return a.putObject(ctx, input)
 	case "RemoveObject":
-		return a.putObject(ctx, input)
+		return a.removeObject(ctx, input)
 	}
 
 	return true, nil
