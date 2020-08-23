@@ -22,7 +22,6 @@ import (
 	"github.com/jeremywohl/flatten"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/thoas/go-funk"
 )
 
 var activityMd = activity.ToMetadata(&Settings{}, &Input{}, &Output{})
@@ -110,7 +109,7 @@ func New(ctx activity.InitContext) (activity.Activity, error) {
 		ctx.Logger().Errorf("MinIO connection error: %v", err)
 		return nil, err
 	}
-	ctx.Logger().Debug("Got MinIO connection")
+	ctx.Logger().Debugf("Got MinIO connection: %v", minioClient)
 
 	act := &Activity{
 		activitySettings: s,
@@ -292,10 +291,15 @@ func (a *Activity) putObject(ctx activity.Context, input *Input) (bool, error) {
 		}
 
 	case "CSV":
-		// var dataMap map[string]interface{} = make(map[string]interface{})
-		// // json.Unmarshal([]byte(input.Data.(string)), &dataMap)
+		var dataMap map[string]interface{} = make(map[string]interface{})
+		err := json.Unmarshal([]byte(input.Data.(string)), &dataMap)
+		if err != nil {
+			logger.Errorf("Error unmarshal input data: %v", err)
+			_ = a.OutputToContext(ctx, nil, err)
+			return true, err
+		}
 		// json.Unmarshal([]byte(fmt.Sprintf("%v", input.Data)), &dataMap)
-		flattenedMap, err := flatten.Flatten(input.Data.(map[string]interface{}), "", flatten.DotStyle)
+		flattenedMap, err := flatten.Flatten(dataMap, "", flatten.DotStyle)
 		if err != nil {
 			logger.Errorf("Error flattening input data: %v", err)
 			_ = a.OutputToContext(ctx, nil, err)
@@ -304,11 +308,9 @@ func (a *Activity) putObject(ctx activity.Context, input *Input) (bool, error) {
 		logger.Debugf("flattenedMap: %v", flattenedMap)
 
 		var csvHeaders []string = []string{}
-		for _, value := range funk.Keys(flattenedMap).([]string) {
-			csvHeaders = append(csvHeaders, fmt.Sprintf("%q", value))
-		}
 		var csvValues []string = []string{}
-		for _, value := range funk.Values(flattenedMap).([]interface{}) {
+		for key, value := range flattenedMap {
+			csvHeaders = append(csvHeaders, key)
 			switch v := value.(type) {
 			case string:
 				csvValues = append(csvValues, fmt.Sprintf("%q", v))
