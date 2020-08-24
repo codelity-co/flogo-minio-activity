@@ -292,7 +292,15 @@ func (a *Activity) putObject(ctx activity.Context, input *Input) (bool, error) {
 
 	case "CSV":
 		var dataMap map[string]interface{} = make(map[string]interface{})
-		err := json.Unmarshal([]byte(input.Data.(string)), &dataMap)
+		switch data := input.Data.(type) {
+		case string:
+			err = json.Unmarshal([]byte(data), &dataMap)
+		case map[string]interface{}:
+			dataMap = data
+			err = nil
+		default:
+			err = errors.New("Unknown input.Data type")
+		}
 		if err != nil {
 			logger.Errorf("Error unmarshal input data: %v", err)
 			_ = a.OutputToContext(ctx, nil, err)
