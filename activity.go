@@ -2,7 +2,6 @@ package minio
 
 import (
 	"bytes"
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -20,8 +19,8 @@ import (
 	"github.com/project-flogo/core/data/resolve"
 
 	"github.com/jeremywohl/flatten"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v6"
+	// "github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 var activityMd = activity.ToMetadata(&Settings{}, &Input{}, &Output{})
@@ -73,9 +72,10 @@ func New(ctx activity.InitContext) (activity.Activity, error) {
 		ctx.Logger().Debugf("methodOpitons settings resolved: %v", s.SslConfig)
 	}
 
-	minioOptions := &minio.Options{
-		Creds:  credentials.NewStaticV4(s.AccessKey, s.SecretKey, ""),
-		Secure: s.EnableSsl,
+	minioClient, err = minio.New(s.Endpoint, s.AccessKey, s.SecretKey, s.EnableSsl)
+	if err != nil {
+		ctx.Logger().Errorf("MinIO connection error: %v", err)
+		return nil, err
 	}
 
 	if s.EnableSsl && len(s.SslConfig["caFile"].(string)) > 0 {
@@ -91,9 +91,10 @@ func New(ctx activity.InitContext) (activity.Activity, error) {
 		}
 
 		caCertPool := x509.NewCertPool()
+
 		caCertPool.AppendCertsFromPEM(caCert)
 
-		minioOptions.Transport = &http.Transport{
+		minioClient.SetCustomTransport(&http.Transport{
 			MaxIdleConns:       int(s.SslConfig["maxIdleConns"].(int64)),
 			IdleConnTimeout:    (time.Second * time.Duration(s.SslConfig["idleConnTimeout"].(int64))),
 			DisableCompression: s.SslConfig["disableCompression"].(bool),
@@ -101,13 +102,8 @@ func New(ctx activity.InitContext) (activity.Activity, error) {
 				Certificates: []tls.Certificate{cert},
 				RootCAs:      caCertPool,
 			},
-		}
-	}
+		})
 
-	minioClient, err = minio.New(s.Endpoint, minioOptions)
-	if err != nil {
-		ctx.Logger().Errorf("MinIO connection error: %v", err)
-		return nil, err
 	}
 	ctx.Logger().Debugf("Got MinIO connection: %v", minioClient)
 
@@ -191,7 +187,7 @@ func (a *Activity) bucketExists(ctx activity.Context, input *Input) (bool, error
 	logger := ctx.Logger()
 
 	logger.Debug("Call MinIO BucketExists method")
-	isBucketExisting, err := a.minioClient.BucketExists(context.Background(), a.activitySettings.BucketName)
+	isBucketExisting, err := a.minioClient.BucketExists(a.activitySettings.BucketName)
 	if err != nil {
 		logger.Errorf("Error in MinIO BucketExists method: %v", err)
 		_ = a.OutputToContext(ctx, nil, err)
@@ -212,7 +208,7 @@ func (a *Activity) getObject(ctx activity.Context, input *Input) (bool, error) {
 	logger := ctx.Logger()
 
 	logger.Debug("Call MinIO GetObject method")
-	minioObject, err := a.minioClient.GetObject(context.Background(), a.activitySettings.BucketName, input.ObjectName, minio.GetObjectOptions{})
+	minioObject, err := a.minioClient.GetObject(a.activitySettings.BucketName, input.ObjectName, minio.GetObjectOptions{})
 	if err != nil {
 		logger.Errorf("Error in MinIO GetObject method: %v", err)
 		_ = a.OutputToContext(ctx, nil, err)
@@ -252,7 +248,7 @@ func (a *Activity) makeBucket(ctx activity.Context, input *Input) (bool, error) 
 	logger := ctx.Logger()
 
 	logger.Debug("Call MinIO BucketExists method")
-	err = a.minioClient.MakeBucket(context.Background(), a.activitySettings.BucketName, minio.MakeBucketOptions{Region: a.activitySettings.Region})
+	err = a.minioClient.MakeBucket(a.activitySettings.BucketName, a.activitySettings.Region)
 	if err != nil {
 		logger.Errorf("Error in MinIO MakeBucket method: %v", err)
 		_ = a.OutputToContext(ctx, nil, err)
@@ -337,7 +333,7 @@ func (a *Activity) putObject(ctx activity.Context, input *Input) (bool, error) {
 	}
 
 	logger.Debug("Call MinIO PutObject method")
-	numberOfBytes, err := a.minioClient.PutObject(context.Background(), a.activitySettings.BucketName, input.ObjectName, bytes.NewReader(dataBytes), int64(len(dataBytes)), minio.PutObjectOptions{})
+	numberOfBytes, err := a.minioClient.PutObject(a.activitySettings.BucketName, input.ObjectName, bytes.NewReader(dataBytes), int64(len(dataBytes)), minio.PutObjectOptions{})
 	if err != nil {
 		logger.Errorf("Error in MinIO PutObject method: %v", err)
 		_ = a.OutputToContext(ctx, nil, err)
@@ -358,7 +354,7 @@ func (a *Activity) removeObject(ctx activity.Context, input *Input) (bool, error
 	logger := ctx.Logger()
 
 	logger.Debug("Call MinIO GetObject method")
-	err = a.minioClient.RemoveObject(context.Background(), a.activitySettings.BucketName, input.ObjectName, minio.RemoveObjectOptions{})
+	err = a.minioClient.RemoveObject(a.activitySettings.BucketName, input.ObjectName)
 	if err != nil {
 		logger.Errorf("Error in MinIO RemoveObject method: %v", err)
 		_ = a.OutputToContext(ctx, nil, err)
