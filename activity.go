@@ -96,8 +96,8 @@ func New(ctx activity.InitContext) (activity.Activity, error) {
 		caCertPool.AppendCertsFromPEM(caCert)
 
 		minioOptions.Transport = &http.Transport{
-			MaxIdleConns:       int(s.SslConfig["maxIdleConns"].(int64)),
-			IdleConnTimeout:    (time.Second * time.Duration(s.SslConfig["idleConnTimeout"].(int64))),
+			MaxIdleConns:       int(s.SslConfig["maxIdleConns"].(int)),
+			IdleConnTimeout:    (time.Second * time.Duration(s.SslConfig["idleConnTimeout"].(int))),
 			DisableCompression: s.SslConfig["disableCompression"].(bool),
 			TLSClientConfig: &tls.Config{
 				Certificates: []tls.Certificate{cert},
